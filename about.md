@@ -8,9 +8,7 @@ About
 
 * I am 21 years old programmer and am interested in Algorithms and Math.
 * I am curently a 4th year CS Undergrad at BITS Pilani.
-* I like running much. It helps me to be sane. I am fitness freak.
-* I love to travel. ✈
-* I will try to consistently blog here, mainly on Mathematics, Algorithms and a few other topics am dabbling in.
+* I will try to consistently blog here, mainly on Machine Learning, Algorithms and a few other topics am dabbling in.
 * You can follow me on [Quora](https://www.quora.com/profile/Sudarshan-Konge).
 * Feel free to drop me an e-mail, <a href="mailto:sudk1896@gmail.com">sudk1896@gmail.com</a>
 
@@ -23,13 +21,12 @@ About this site
   [Github repo](https://github.com/anildigital/anildigital.github.com/). Posts
   are in [Markdown](http://daringfireball.net/projects/markdown/) and
   the source resides on
-  [GitHub](https://github.com/anildigital/anildigital.github.com/). If
-  you find any error, please let me know.
+  [GitHub](https://github.com/anildigital/anildigital.github.com/).
 
 
 Elsewhere
 =========
-You can find me on a variety of social web sites; my username is usually “anildigital”. Alphabetically:
+You can find me on a variety of social web sites; my username is usually “sudk1896” or "sidchelseafan":
 
 * [GitHub](http://github.com/sudk1896) — code
 * [LinkedIn](https://www.linkedin.com/in/sudk1896) — all business.
