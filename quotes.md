@@ -4,9 +4,9 @@ title: Quotes
 ---
 
 
-When you don’t create things, you become defined by your tastes rather than ability. Your tastes only narrow and exclude people. So, create.
+Whenever you find yourself on the side of the majority, it is time to pause and reflect.
 
-[Why the Lucky Stiff](http://favstar.fm/users/_why/status/881768089)
+[Mark Twain](http://www.cmgww.com/historic/twain/about/bio.htm)
 
 ---
 
@@ -17,30 +17,17 @@ J.K. Rowling
 
 ---
 
-It's not how something looks, it's how it moves. 
+Anyone who lives within their means suffers from a lack of imagination.
 
 
-[Jack Dorsey](https://twitter.com/jack/status/416766906641956864)
-
----
-
-Always trust your first instincts, especially about people. They are pure and always correct.
-
-
-[Jack Dorsey](https://twitter.com/jack/status/339591691927429121)
-
+[Oscar Wilde](http://www.cmgww.com/historic/wilde/)
 
 ---
 
-Be selfish: create and build things you want to see. The bet is others want the same.
+Judge a man by his questions, rather than his answers.
 
-[Jack Dorsey](https://twitter.com/jack/status/331412068391587841)
 
----
-
-“It's hard to beat a person who never gives up.”—Babe Ruth
-
-[Jack Dorsey](https://twitter.com/jack/status/328661838428512256)
+[Voltaire](https://en.wikipedia.org/wiki/Voltaire)
 
 
 ---
