@@ -6,7 +6,7 @@ title: About
 About
 ========
 
-* I am 21 years old programmer and am interested in Algorithms and Math.
+* I am a final year CS undergrad and am interested in Machine Learning, Statistics and Algorithms.
 * I am curently a 4th year CS Undergrad at BITS Pilani.
 * I will try to consistently blog here, mainly on Machine Learning, Algorithms and a few other topics am dabbling in.
 * You can follow me on [Quora](https://www.quora.com/profile/Sudarshan-Konge).
