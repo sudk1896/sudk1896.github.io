@@ -6,8 +6,7 @@ title: About
 About
 ========
 
-* I am a final year CS undergrad and am interested in Machine Learning, Statistics and Algorithms.
-* I am curently a 4th year CS Undergrad at BITS Pilani.
+* I am a final year CS undergrad at BITS Pilani, Hyderabad and am interested in Machine Learning, Statistics and Algorithms.
 * I will try to consistently blog here, mainly on Machine Learning, Algorithms and a few other topics am dabbling in.
 * You can follow me on [Quora](https://www.quora.com/profile/Sudarshan-Konge).
 * Feel free to drop me an e-mail, <a href="mailto:sudk1896@gmail.com">sudk1896@gmail.com</a>
