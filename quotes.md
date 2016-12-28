@@ -32,4 +32,8 @@ Judge a man by his questions, rather than his answers.
 
 ---
 
+A man who procrastinates in his **CHOOSING** will inevitably have his choice made for him by circumstance.
+
+--
+
 
