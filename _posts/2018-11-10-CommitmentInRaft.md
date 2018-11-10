@@ -36,7 +36,7 @@ In order for this to not happen, the **leader in the current term** should repli
 with indices >= 2. The RequestVote RPC would fail for S5 as RequestVoteRPC #2 would not hold, S5's logs aren't up-to-date
 with S1,S2,S2 (i.e. a majority) and hence S5 cannot get votes from a majority of the servers and can't be elected as leader.
 
-There are two subltle learnings that I could discern - 
+There are two subtle learnings that I could discern - 
 
 1. Even if entries from older terms are present on a majority of the servers, that is no guarantee of commitment.
 2. In order for an entry to be committed, an entry must be stored on a majority of the servers and the leader that commits it must have replicated an entry from its own current term to a majority of the servers.
