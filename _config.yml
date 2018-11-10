@@ -4,7 +4,7 @@ email: sudk1896@gmail.com
 description: >
   Programmer, Statistics and Machine Learning Enthusiast
 baseurl: "" # the subpath of your site, e.g. /blog/
-url: "https://sudk1896.github.io/" # the base hostname & protocol for your site
+url: "https://sudk1896.github.io" # the base hostname & protocol for your site
 github_username:  sudk1896
 
 # Build settings
