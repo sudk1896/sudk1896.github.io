@@ -9,7 +9,7 @@ I was reading up on Raft, an understandable consensus algorithm. The link to the
 
 Right here The paper states that
 
-![alt text](https://github.com/sudk1896/sudk1896.github.io/blob/master/images/Screenshot%20from%202018-11-10%2013-57-44.png "Commitment"),
+![Page 7](https://github.com/sudk1896/sudk1896.github.io/blob/master/images/Screenshot%20from%202018-11-10%2013-57-44.png),
 ```
 A Log entry is committed once the leader that created the entry has 
 replicated it on a majority of the servers.
