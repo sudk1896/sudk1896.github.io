@@ -9,7 +9,7 @@ I was reading up on Raft, an understandable consensus algorithm. The link to the
 
 Right here The paper states that
 
-![Page 7](https://github.com/sudk1896/sudk1896.github.io/blob/master/images/Screenshot%20from%202018-11-10%2013-57-44.png),
+![Page 7](https://sudk1896.github.io/images/Screenshot%20from%202018-11-10%2013-57-44.png),
 ```
 A Log entry is committed once the leader that created the entry has 
 replicated it on a majority of the servers.
@@ -20,7 +20,7 @@ the servers, it is committed. This assumption doesn't hold.
 
 On Page-8 of the raft paper and in Figure-8  
 
-![alt text](https://github.com/sudk1896/sudk1896.github.io/blob/master/images/Screenshot%20from%202018-11-10%2014-15-33.png "here"),
+![alt text](https://sudk1896.github.io/images/Screenshot%20from%202018-11-10%2014-15-33.png "here"),
 
 
 In Figure-8.c, It is Term 4 and S1 is leader. Even though the entry at Index 2 Term 2 is present on a majority of 
