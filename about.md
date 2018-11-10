@@ -6,7 +6,7 @@ title: About
 About
 ========
 
-* I am a Software Engineer at Microsoft. I work on [Bing Webmaster Tools](bing.com/webmaster).
+* I am a Software Engineer at Microsoft. I work on [Bing Webmaster Tools](bing.com/webmaster). The tools I use most at work are .NET Core and C#.
 * I am interested in Distributed Systems, Concurrency, Golang and .NET Core in no particular order.
 * You can follow me on [Quora](https://www.quora.com/profile/Sudarshan-Konge).
 * Feel free to drop me an e-mail, <a href="mailto:sudk1896@gmail.com">sudk1896@gmail.com</a>
