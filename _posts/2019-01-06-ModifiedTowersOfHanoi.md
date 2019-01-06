@@ -30,4 +30,4 @@ Consequently the recursion translates to the following equation
 \\(T(n) = T(n-1) + 2 \forall n \geq 2 \\)
 For the base case of when you have one disk, it only takes one
 move to move that one disk from any peg to any other. Solving this gives
-\\(T(n) = 2n - 1 \forall n \geq 1)
+\\(T(n) = 2n - 1 \forall n \geq 1 \\)
