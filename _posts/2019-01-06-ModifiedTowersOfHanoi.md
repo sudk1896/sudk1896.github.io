@@ -18,7 +18,7 @@ The problem is to describe the algorithm and the number of steps it takes i.e. t
 
 I was assisted by this figure below - 
 
-![image](https://github.com/sudk1896/sudk1896.github.io/blob/master/images/Screenshot%20from%202019-01-06%2016-12-18.png)
+![image](https://sudk1896.github.io/images/Screenshot%20from%202019-01-06%2016-12-18.png)
 
 The important clue here is that with the restriction number three, we have only one recursive
 sub-problem instead of the usual two in the classical Tower of Hanoi problem. Say that you
@@ -27,7 +27,7 @@ moved those \\(n-1\\) disks, after this you can move the \\(n^th\\) disk to peg 
 and the rest of \\(n-1\\) disks onto peg C in one move (because of the restriction #3).
 
 Consequently the recursion translates to the following equation
-\\(T(n) = T(n-1) + 2 \forall n \geq 2 \\)
+\\(T(n) = T(n-1) + 2  \forall  n \geq 2 \\)
 For the base case of when you have one disk, it only takes one
 move to move that one disk from any peg to any other. Solving this gives
-\\(T(n) = 2n - 1 \forall n \geq 1 \\)
+\\(T(n) = 2n - 1  \forall  n \geq 1 \\)
