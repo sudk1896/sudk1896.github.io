@@ -6,8 +6,8 @@ title: About
 About
 ========
 
-* I am a final year CS undergrad at BITS Pilani, Hyderabad and am interested in Machine Learning, Statistics and Algorithms.
-* I will try to consistently blog here, mainly on Machine Learning, Algorithms and a few other topics am dabbling in.
+* I am a Software Engineer at Microsoft. I work on [Bing Webmaster Tools](https://bing.com/webmaster). The tools I use most at work are .NET Core and C#.
+* I am interested in Distributed Systems, Concurrency, Golang and .NET Core in no particular order.
 * You can follow me on [Quora](https://www.quora.com/profile/Sudarshan-Konge).
 * Feel free to drop me an e-mail, <a href="mailto:sudk1896@gmail.com">sudk1896@gmail.com</a>
 
