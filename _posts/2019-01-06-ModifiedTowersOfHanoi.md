@@ -27,7 +27,7 @@ moved those \\(n-1\\) disks, after this you can move the \\(n^{th}\\) disk to pe
 and the rest of \\(n-1\\) disks onto peg C in one move (because of the restriction #3).
 
 Consequently the recursion translates to the following equation
-\\(T(n) = T(n-1) + 2  \forall  n \geq 2 \\)
+\\(T(n) = T(n-1) + 2 \thinspace \forall \thinspace  n \geq 2 \\)
 For the base case of when you have one disk, it only takes one
 move to move that one disk from any peg to any other. Solving this gives
-\\(T(n) = 2n - 1  \forall  n \geq 1 \\)
+\\(T(n) = 2n - 1 \thinspace \forall \thinspace  n \geq 1 \\)
