@@ -23,7 +23,7 @@ I was assisted by this figure below -
 The important clue here is that with the restriction number three, we have only one recursive
 sub-problem instead of the usual two in the classical Tower of Hanoi problem. Say that you
 begin with \\(n\\) disks and you have moved \\(n-1\\) disks to peg B i.e. the Recursion Fairy has 
-moved those \\(n-1\\) disks, after this you can move the \\(n^th\\) disk to peg C in one move
+moved those \\(n-1\\) disks, after this you can move the \\(n^{th}\\) disk to peg C in one move
 and the rest of \\(n-1\\) disks onto peg C in one move (because of the restriction #3).
 
 Consequently the recursion translates to the following equation
