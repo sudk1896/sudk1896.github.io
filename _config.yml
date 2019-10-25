@@ -1,11 +1,28 @@
-# Site settings
-title: Sudarshan Konge
-email: sudk1896@gmail.com
-description: >
-  Interested in Algorithms, Math & Concurrency in no particular order.
-baseurl: "" # the subpath of your site, e.g. /blog/
-url: "https://sudk1896.github.io" # the base hostname & protocol for your site
-github_username:  sudk1896
+name: "Jekyll true minimal theme"
+description: "Lightweight theme"
 
-# Build settings
+url: '' 
+baseurl: ''
+
 markdown: kramdown
+markdown_ext: "markdown,mkdown,mkdn,mkd,md"
+highlighter: rouge
+
+kramdown:
+  input: GFM
+  syntax_highlighter: rouge
+
+plugins:
+  - jekyll-paginate
+paginate: 10
+paginate_path: /page-:num
+
+#disqus-id: your-disqus-id
+
+source: .
+destination: ./_site
+
+sass:
+    style: :compressed
+    sass_dir: assets/css/
+
