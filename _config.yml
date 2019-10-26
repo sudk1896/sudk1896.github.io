@@ -1,4 +1,4 @@
-name: "Jekyll true minimal theme"
+name: "A blog on Computer Systems & Algorithms"
 description: "Lightweight theme"
 
 url: '' 
@@ -16,8 +16,6 @@ plugins:
   - jekyll-paginate
 paginate: 10
 paginate_path: /page-:num
-
-#disqus-id: your-disqus-id
 
 source: .
 destination: ./_site
