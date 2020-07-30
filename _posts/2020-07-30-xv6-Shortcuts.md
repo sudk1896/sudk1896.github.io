@@ -5,6 +5,7 @@ comment: false
 ---
 - *cd /opt/riscv/bin*, after cd'ing run *./riscv64-unknown-linux-gnu-gdb ~/xv6-riscv-fall19/kernel/kernel*.
 - Sample gdbinit config,
+
 `
 add-auto-load-safe-path ~/xv6-riscv-fall19/.gdbinit
 
@@ -16,6 +17,7 @@ Add symbols for whatever files you want to debug.
 `
 
 - gdb shortcuts,
+
 ` 
 b *filename:line_number* (but bp in file at file number)
 
