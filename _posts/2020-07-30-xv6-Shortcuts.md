@@ -1,6 +1,6 @@
 ---
 title: Shortcuts for xv6-riscv
-layout: posts
+layout: post
 comment: false
 ---
 1. *cd /opt/riscv/bin*, after cd'ing run *./riscv64-unknown-linux-gnu-gdb ~/xv6-riscv-fall19/kernel/kernel*.
