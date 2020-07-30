@@ -16,8 +16,8 @@ target remote localhost:26000
 
 add-symbol-file ~/xv6-riscv-fall19/user/_lazytests_
 
-Add symbols for whatever files you want to debug.
 ```
+Add symbols for whatever files you want to debug.
 
 
 - gdb shortcuts,
