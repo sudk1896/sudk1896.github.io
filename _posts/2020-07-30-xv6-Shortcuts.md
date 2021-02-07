@@ -5,6 +5,7 @@ comment: false
 ---
 - *cd /opt/riscv/bin*, after cd'ing run *./riscv64-unknown-linux-gnu-gdb ~/xv6-riscv-fall19/kernel/kernel*.
 
+- Instead of above #1, run _riscv64-unknown-elf-gdb_
 
 - Sample gdbinit config,
 
