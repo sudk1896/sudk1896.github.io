@@ -1,0 +1,491 @@
+<?xml version="1.0" encoding="utf-8"?><feed xmlns="http://www.w3.org/2005/Atom" ><generator uri="https://jekyllrb.com/" version="3.10.0">Jekyll</generator><link href="http://localhost:4000/feed.xml" rel="self" type="application/atom+xml" /><link href="http://localhost:4000/" rel="alternate" type="text/html" /><updated>2026-07-16T21:28:46+05:30</updated><id>http://localhost:4000/feed.xml</id><title type="html">A blog on Computer Systems &amp;amp; Algorithms</title><subtitle>Lightweight theme</subtitle><entry><title type="html">Leader election and Log replication in Raft</title><link href="http://localhost:4000/2026/07/03/Raft.html" rel="alternate" type="text/html" title="Leader election and Log replication in Raft" /><published>2026-07-03T00:00:00+05:30</published><updated>2026-07-03T00:00:00+05:30</updated><id>http://localhost:4000/2026/07/03/Raft</id><content type="html" xml:base="http://localhost:4000/2026/07/03/Raft.html"><![CDATA[<p>Raft is a consensus algorithm for managing a replicated log. This write-up will go over Leader election and Log Replication. The insights are from finishing assignments <a href="https://pdos.csail.mit.edu/6.824/labs/lab-raft1.html">3A, 3B, 3C</a> from the MIT 6.824 Distributed Systems course. This post
+assumes that you have read the <a href="https://raft.github.io/raft.pdf">Raft paper</a>, ideally multiple times.</p>
+
+<h1 id="leader-election">Leader election</h1>
+
+<p>Raft enforces strong leadership. It elects one leader which is responsible for sending log entries to all other servers (peers). Log entries always flow from leader to followers.</p>
+
+<p>Every raft server has an <code class="language-plaintext highlighter-rouge">electionTimeout</code> (stored persistently on disk) that is randomly set from within a range for e.g., between 150-300ms. Elections are managed using <code class="language-plaintext highlighter-rouge">RequestVote</code> RPCs. Below is the pseudo-code for how elections occur and how a leader is elected.</p>
+
+<p>Every peer has a long running task (conceptually a cron job)</p>
+<div class="language-plaintext highlighter-rouge"><div class="highlight"><pre class="highlight"><code>// The candidate sends a RequestVote RPC to the peer
+// this method runs on the peer
+// The result of the execution (whether vote was granted etc)
+// is sent back via the reply
+func RequestVoteRpc(args RequestVoteArgs, reply RequestVoteReply){
+   if args.Term &lt; currentTerm {
+    reply.Success = false
+    return
+   }
+
+   reply.Success = false
+   if votedFor == null or votedFor == args.CandidateId &amp;&amp; IsCandidateLogUpToDate(lastLogIdx, lastLogTerm int) {
+    reply.Success = true
+   }
+}
+
+
+func startElection(){
+    if (time elapsed since receiving AppendEntries RPC or since voting for a candidate &gt; electionTimeout){
+        currentState := Candidate
+        currentTerm += 1
+        voteFor := myself
+        votes := 1
+        electionTimeout := 150 + (randInit()%150) // reset election timer
+        // the RequestVote RPCs are sent in parallel to all peers by the candidate
+        for p := peers {
+            if p != myself {
+                requestVoteReply := go RequestVoteRpc()
+                if (requestVoteReply != successful) {
+                    sleep(smallDuration)
+                    continue // retry the rpc
+                } else {
+                    votes += 1
+                }
+            }
+        }
+
+        if votes &gt; majority of peers {
+            currentState := Leader
+            for p := peers {
+                if p != myself {
+                    go SendAppendEntriesHeartbeat(p)
+                }
+            }
+        }
+    }
+}
+
+func electionTicker(){
+    for {
+        sleepDuration := 150 + (randInt()%150)
+        Sleep(sleepDuration)
+        startElection()
+    }
+}
+</code></pre></div></div>
+
+<p>At its core for a peer to be elected as a leader, first a peer transitions to candidate, then it sends <code class="language-plaintext highlighter-rouge">RequestVote</code> RPCs in parallel to all other peers. If it gets a majority of votes, it becomes a Leader. Not every candidate can become a leader, only candidates that have an up to date log can become leaders, if a candidate doesn’t have an up to date log it won’t receive a majority of votes. This restriction is implemented via the <code class="language-plaintext highlighter-rouge">IsCandidateUpToDate</code> method.</p>
+
+<p>Upon election as a leader, the leader sends an <code class="language-plaintext highlighter-rouge">AppendEntries</code> RPC to all other peers to establish
+and maintain it leadership. This is to prevent other peers from attempting to become candidates and also to transfer logs from leader to followers. We will discuss this in the Log replication section.</p>
+
+<h1 id="log-replication">Log replication</h1>
+
+<p>In Raft, all clients (that send logs) talk to the leader only. If a client connects to a non-leader its redirected to the leader. When a client sends a new log entry to be appended, the leader would add it to its own log and then the <code class="language-plaintext highlighter-rouge">AppendEntries</code> heartbeat would take care of replicating this to all the peers.</p>
+
+<p>After a leader is elected, it sends an <code class="language-plaintext highlighter-rouge">AppendEntries</code> RPC to all other peers. This has two functions, to establish and maintain leadership, for which we send the RPC at a regular cadence and second, if there are new log entries added to the leader’s log this would be replicated by the RPC as well. Although the Raft paper maintains that for an <code class="language-plaintext highlighter-rouge">AppendEntries</code> heartbeat, the log entries sent should be empty. This is an implementation detail. In our case, when we send <code class="language-plaintext highlighter-rouge">AppendEntries</code> heartbeat and in between the heartbeats if there are logs added to the leader, we would send the newly added logs in the next heartbeat.</p>
+
+<div class="language-plaintext highlighter-rouge"><div class="highlight"><pre class="highlight"><code>// this runs on the peer, args is sent by the leader and reply
+// is set by the peer for the leader to consume
+func AppendEntriesRpc(peer, appendEntriesArgs, appendEntriesReply){
+    if appendEntriesArgs.Term &lt; currentTerm {
+        // rpc sent by outdated leader
+        // decline the rpc (reply false)
+        // Leader will convert to follower on receipt of this RPC response
+    }
+
+    if appendEntriesArgs.PrevLogIdx &gt;= len(log) {
+        // Leader's log is longer than the follower
+        // Decline the RPC (reply false)
+        // Leader will update nextIdx after receipt of this rpc response
+    }
+
+    if log[appendEntriesArgs.PrevLogidx] != appendEntriesArgs.PrevLogTerm {
+        // There is a term mismatch at lastLogIdx b/w leader and follower
+        // Decline the RPC (reply false)
+        // Leader will update nextIdx after receipt of this rpc response.
+    }
+
+    // Terms match at lastLogIdx for leader and peer.
+    i := appendEntriesArgs.PrevLogIdx + 1
+    j := 0
+    for i &lt; len(log) &amp;&amp; j &lt; len(appendEntriesArgs.Entries) {
+        // find out where leader and follower log disagree (if at all)
+        // let that index be k
+        // discard follower log after that index
+    }
+
+    // Append Log sent by leader starting from index k
+    // since its not present on the follower.
+    log = append(log, appendEntriesArgs.Entries[k:])
+
+    // AppendEntriesRPC was successful
+    // After leader receives this rpc response and updates
+    // nextIdx and matchIdx for this peer, leader and follower logs match
+    appendEntriesReply.Success = true
+
+    // Update this peer's commit Index based on
+    // leader's commitIndex and this peer's updated log
+    if appendEntriesArgs.LeaderCommit &gt; commitIndex {
+        commitIndex = min(appendEntriesArgs.LeaderCommmit, len(log))
+    }
+}
+
+// The leader sends an Append Entries RPC to every peer
+// The leader runs this and handles the response from the peer
+// This doesn't handle the scenarios where RPC responses
+// might be dropped or delivered out of order
+func SendAppendEntriesRPC(peer int){
+    // After an election rf.nextIdx[peer] = len(log)
+    lastLogIdx := rf.nextIdx[peer] - 1 // we are optimistically assuming that peer has
+    // log up to lastLogIdx.
+    lastLogTerm := rf.log[lastLogIdx].Term
+    logEntries := rf.log[lastLogIdx+1:] // if peer has log up to lastLogIdx, we need to send
+    // log starting from lastLogIdx+1 to be rpelicated on the peer.
+
+    appendEntriesArgs := {
+        Term : currentTerm,
+        PrevLogIdx: lastLogIdx,
+        PrevLogTerm: lastLogTerm,
+        Entries: logEntries
+    }
+
+    appendEntriesResp := go AppendEntriesRpc(peer, appendEntriesArgs, appendEntriesReply)
+    if appendEntriesResp.Status != Failed {
+        //peer was down, resp was dropped, req timed out etc
+        retry
+    } else {
+        if appendEntriesReply.Success {
+            // log up to lastLogIdx is present on the peer and it added logEntries to its log
+            // update nextIndex and matchIndex
+            nextIdx[peer] = lastLogIdx + len(logEntries)
+            matchIdx[peer] = lastLogIdx + len(logEntries) - 1
+        } else {
+            nextIdx[peer] = nextIdx[peer] - 1 // we know that log doesn't match at lastLogIdx
+            // so decrement it by 1 and retry
+            retry
+        }
+    }
+}
+
+func SendAppendEntriesPeriodically(peer int){
+    for {
+        // Send Append Entries RPC every 10ms to maintain leadership
+        // and replicate logs
+        go SendAppendEntriesRPC(peer)
+        time.Sleep(10ms)
+    }
+}
+
+func SendAppendEntriesHeartbeat(){
+    for p := range peers {
+        if p != leader {
+            go SendAppendEntriesPeriodically(p)
+        }
+    }
+}
+</code></pre></div></div>
+
+<p>The Raft protocol leaves a lot of room for interpretation from the sender’s side.
+The protocol doesn’t specify how to handle out of order RPC replies. Here is one bug
+that stumped me. In Figure 2 of the paper, its mentioned that <em>matchIndex[] increases monotonically</em>. This means that whenever we update <em>matchIndex</em> for a peer on a successful AppendEntries RPC response, we should ensure <em>matchIndex</em> can only increase.</p>
+
+<p>We use <em>matchIndex</em> to update the <em>commitIndex</em> on the leader, which in the end decides whether log entries up to a certain index are committed and eventually applied to the state machine. When an operation is applied to the state machine, we return a successful response
+to the client and that means that the log entries up to an index submitted by the client are durable and won’t be overwritten in the future.</p>
+
+<div class="language-plaintext highlighter-rouge"><div class="highlight"><pre class="highlight"><code>If there exists an N such that N &gt; commitIndex, a majority
+of matchIndex[i] ≥ N, and log[N].term == currentTerm:
+set commitIndex = N
+</code></pre></div></div>
+
+<p>If we were to decrement <em>matchIndex</em>, we would potentially be decrementing <em>commitIndex</em>
+and <em>uncommitting</em> log entries which were already committed thereby violating Leader completeness and State machine safety properties. When we set <em>commitIndex</em>, it will eventually be used to apply the operation to the state machine via</p>
+
+<div class="language-plaintext highlighter-rouge"><div class="highlight"><pre class="highlight"><code>If commitIndex &gt; lastApplied: increment lastApplied, apply
+log[lastApplied] to state machine (§5.3)
+</code></pre></div></div>
+
+<p>As to how the bug can manifest, assume leader sends an Append Entries RPC A
+and RPC B, both were successful. RPC-A was sent before RPC-B but the leader received them out of order i.e., it processed B before A.</p>
+
+<div class="language-plaintext highlighter-rouge"><div class="highlight"><pre class="highlight"><code>AppendEntries RPC-B
+PrevLogIdx: 10
+PrevLogTerm: 8
+Entries: [11, 12, 13] // indices of the entries
+
+AppendEntriesReply
+Success = true
+nextIndex[peer] = 13
+matchIndex[peer] = 12
+</code></pre></div></div>
+
+<p>When we process an older Append Entries response, we must ensure
+that it doesn’t decrement <em>matchIndex</em> from a newer
+Append Entries RPC response. If we process RPC-A’s response in this instance,
+we would be decrementing <em>nextIndex</em> and <em>matchIndex</em>.</p>
+
+<div class="language-plaintext highlighter-rouge"><div class="highlight"><pre class="highlight"><code>AppendEntries RPC-A
+PrevLogIdx: 5
+PrevLogTerm: 8
+Entries: [6, 7] // indices of the entries
+
+AppendEntriesReply // received after B
+Success = true
+
+nextIndex[peer] = 8 // WRONG!
+matchIndex[peer] = 7 // WRONG!
+// Leader and peer already agree till index 12 (matchIndex[peer] = 12 from RPC-B)
+// we are removing entries from the peer which were successfully replicated
+// and possibly committed and applied to the state machine.
+</code></pre></div></div>]]></content><author><name></name></author><summary type="html"><![CDATA[Raft is a consensus algorithm for managing a replicated log. This write-up will go over Leader election and Log Replication. The insights are from finishing assignments 3A, 3B, 3C from the MIT 6.824 Distributed Systems course. This post assumes that you have read the Raft paper, ideally multiple times.]]></summary></entry><entry><title type="html">On MVCC in HyPer</title><link href="http://localhost:4000/2026/03/18/HyPer-mvcc.html" rel="alternate" type="text/html" title="On MVCC in HyPer" /><published>2026-03-18T00:00:00+05:30</published><updated>2026-03-18T00:00:00+05:30</updated><id>http://localhost:4000/2026/03/18/HyPer-mvcc</id><content type="html" xml:base="http://localhost:4000/2026/03/18/HyPer-mvcc.html"><![CDATA[<p>MVCC (Multi-version concurrency control) in Databases help scale the read and write throughput
+by not letting readers block the writers and vice-versa. For now, we will talk about how
+snapshot isolation is implemented using MVCC as it has been explained in <a href="https://15721.courses.cs.cmu.edu/spring2016/papers/p677-neumann.pdf">Fast Serializable Multi-Version Concurrency Control
+for Main-Memory Database Systems</a>.</p>
+
+<p>Also, this post will only go over how sequential scan would work in the above MVCC scheme.
+We will leave Insert, Updates and Deletes for a later post. The goal is to build a solid understanding
+via pseudo code on how how timestamps are assigned to transactions and how they are used to read data.
+The idea in Snapshot Isolation (SI) is that every transaction gets a consistent snapshot of data as and when
+it was created. They then make changes to the data in their own private workspace i.e., the changes aren’t
+visible to any other transactions. During commit time, transactions check for any possible conflicts
+in the data that was written wrt running or committed transactions and 
+resolve the conflicts using some scheme such as first committer wins, first updater wins etc.
+This post will not go over the Commit phase.</p>
+
+<p>The HyPer paper proposes that every row in the table stores a <em>version vector</em>. The version vector
+is conceptually a pointer to a Linked list (LL). Each node in this LL contains an <em>undo buffer</em>.
+This undo buffer just stores the change that was made for the row and not the entire modified row.
+As an example, assume we have the following tuple <code class="language-plaintext highlighter-rouge">(1, 2, 3)</code> and a transaction modified it to
+<code class="language-plaintext highlighter-rouge">(11, 2, 3)</code> i.e., only the first attribute was modified. Instead of storing the modified row,
+the undo buffer only stores <code class="language-plaintext highlighter-rouge">(11)</code>. We also store metadata about which properties were and weren’t
+modified so that we can reconstruct the tuple later on (say during a read or sequential scan).</p>
+
+<p>Every transaction gets the following properties,</p>
+
+<p>$\texttt{uint64_t txn_id} \in [2^{62}, \infty)$ (unique per txn)
+$\texttt{uint64_t read_ts} \in [0, 2^{62})$ - when did this transaction start ?
+$\texttt{uint64_t commit_ts} \in [0, 2^{62}]$ - when did this transaction commit ?
+$\texttt{vector<UndoLog>} \text{undoBuffer}$ - List of undo logs for this txn</UndoLog></p>
+
+<p>$\texttt{commit_ts} &gt; \texttt{read_ts}$</p>
+
+<p>Every tuple has the following properties,</p>
+
+<p>$\texttt{uint64_t ts}$ — stores the commit timestamp or the transaction id of the running transaction that modified it
+$\texttt{bool is_deleted}$</p>
+
+<p>Every <em>undo log</em> or <em>undo buffer</em> has the following properties
+$\texttt{bool is_deleted}$ — whether this undo log corresponds to a deletion
+$\texttt{uint64_t ts}$ — timestamp corresponding to this undo log
+$\texttt{Tuple tuple}$ — stores the partial tuple corresponding to the change, not the entire tuple (additional metadata required to reconstruct the tuple is omitted for brevity)
+$\text{Link}$ // -&gt; This is a pointer to the undo log before $\text{ts}$ if one exists</p>
+
+<p>Assume we have transaction $\text{T}$ that starts at time $\text{t}$, we want to read the tuple 
+$\text{X}$. In SI, every transaction gets its own snapshot of data. $\text{T}$ should see the world
+as it exists at time $\text{t}$.</p>
+
+<p>When $\text{T}$ begins, it gets assigned a $\texttt{txn_id}$ that is unique and starts from ${2^{62}}$ and upwards.
+The $\text{read_ts}$ is non-negative and monotonically increasing counter that gets assigned at the start and is ${ &lt; 2^{62}}$.</p>
+
+<p>When $\text{T}$ modifies X, it does two things. It modifies the tuple in-place and sets the $\text{ts} = \text{txn_id}$ and it creates an undo log and stores it in its undo buffer. Lets plug in some numbers to make it
+more concrete.
+Initially, $\text{X = 200}$ and $\text{T}$ modifies it to $\text{X = 300}$ at time $\text{t = 9}$.
+Assume that $\text{txn_id}$ = ${2^{62} +12}$. We will ignore the ${2^{62}}$ and use the remaining
+number as the transaction identifier.</p>]]></content><author><name></name></author><summary type="html"><![CDATA[MVCC (Multi-version concurrency control) in Databases help scale the read and write throughput by not letting readers block the writers and vice-versa. For now, we will talk about how snapshot isolation is implemented using MVCC as it has been explained in Fast Serializable Multi-Version Concurrency Control for Main-Memory Database Systems.]]></summary></entry><entry><title type="html">xv6 traps assignment</title><link href="http://localhost:4000/2022/08/20/xv6-traps.html" rel="alternate" type="text/html" title="xv6 traps assignment" /><published>2022-08-20T00:00:00+05:30</published><updated>2022-08-20T00:00:00+05:30</updated><id>http://localhost:4000/2022/08/20/xv6-traps</id><content type="html" xml:base="http://localhost:4000/2022/08/20/xv6-traps.html"><![CDATA[<ul>
+  <li>
+    <p>RISC-V Assembly: This is fairly straightforward so I will skip it.</p>
+  </li>
+  <li>
+    <p>Backtrace: The calculation for this is given in the question itself but the difficult and most crucial aspect was to pay attention to how you manipulate memory/pointers. Lots of casting will be required.</p>
+  </li>
+  <li>
+    <p>Alarm: The code for this wasn’t a lot. The only hint I can give out is to focus on what functionality the trapframe accomplishes and see how you can leverage that. Also, there is a normal way to do this question and a lazy way, both should work. I came up with the normal way first and then came up with the lazy way. You can look at <code class="language-plaintext highlighter-rouge">hhp3</code>’s videos on YouTube where he goes in depth into xv6, this was super helpful for me in understanding <code class="language-plaintext highlighter-rouge">trapframe</code> and <code class="language-plaintext highlighter-rouge">trampoline</code> and how they fit into trap handling. I had to change the FSSIZE parameter from 1000 to 10000 for one of the usertests to pass as well. My changes were working fine for alarmtests but had to make this change to make usertests pass.</p>
+  </li>
+</ul>
+
+<p>One mistake I remember doing for the <code class="language-plaintext highlighter-rouge">alarm</code> assignment was that somehow I had this notion in mind that I had to copy the alarm handler code into <code class="language-plaintext highlighter-rouge">usertrap</code> and execute it there. But that is clearly not the case. If you read the question multiple times (as I did), we just need the kernel to go the alarm handler code, execute that code and return back.</p>]]></content><author><name></name></author><summary type="html"><![CDATA[RISC-V Assembly: This is fairly straightforward so I will skip it.]]></summary></entry><entry><title type="html">xv6 pgtbl assignment (2021)</title><link href="http://localhost:4000/2022/06/19/xv6-pgtbl.html" rel="alternate" type="text/html" title="xv6 pgtbl assignment (2021)" /><published>2022-06-19T00:00:00+05:30</published><updated>2022-06-19T00:00:00+05:30</updated><id>http://localhost:4000/2022/06/19/xv6-pgtbl</id><content type="html" xml:base="http://localhost:4000/2022/06/19/xv6-pgtbl.html"><![CDATA[<ul>
+  <li>
+    <p>Speeding up system calls: Straightforward task. Store a pointer to <em>struct usyscall</em> in proc.h.
+Allocate a page and assign the PA of that page to the pointer. Add the requisite mappings in <em>proc_pagetable</em></p>
+  </li>
+  <li>
+    <p>Print a pagetable: Again, straightorward task. Your method would be very similar to the <em>walk</em> function.
+About 95% similar.</p>
+  </li>
+  <li>
+    <p>Detecting which pages have been accessed: First read the privileged ISA document to find out how the Access bit 
+is modified (grep for it). The <em>pgaccess</em> syscall is similar to other syscalls in how the args are parsed. 
+In <em>pgaccess</em> impl, general idea is to find out the leaf PTE and then look at the Access bit, the privileged ISA 
+doc has the instructions on how to do that. Find out for each page, the corresponding leaf PTE and get the access bit
+and store it in <em>uint64</em> bitmask. Transfer this bitmask from kernel to userspace using <em>copyout</em>. That’s it.</p>
+  </li>
+</ul>]]></content><author><name></name></author><summary type="html"><![CDATA[Speeding up system calls: Straightforward task. Store a pointer to struct usyscall in proc.h. Allocate a page and assign the PA of that page to the pointer. Add the requisite mappings in proc_pagetable]]></summary></entry><entry><title type="html">Shortcuts for xv6-riscv</title><link href="http://localhost:4000/2020/07/30/xv6-Shortcuts.html" rel="alternate" type="text/html" title="Shortcuts for xv6-riscv" /><published>2020-07-30T00:00:00+05:30</published><updated>2020-07-30T00:00:00+05:30</updated><id>http://localhost:4000/2020/07/30/xv6-Shortcuts</id><content type="html" xml:base="http://localhost:4000/2020/07/30/xv6-Shortcuts.html"><![CDATA[<ul>
+  <li>
+    <p><em>cd /opt/riscv/bin</em>, after cd’ing run <em>./riscv64-unknown-linux-gnu-gdb ~/xv6-riscv-fall19/kernel/kernel</em>.</p>
+  </li>
+  <li>
+    <p>Instead of above #1, run <em>riscv64-unknown-elf-gdb</em></p>
+  </li>
+  <li>
+    <p>Sample gdbinit config,</p>
+  </li>
+</ul>
+
+<div class="language-plaintext highlighter-rouge"><div class="highlight"><pre class="highlight"><code>add-auto-load-safe-path ~/xv6-riscv-fall19/.gdbinit
+
+target remote localhost:26000
+
+add-symbol-file ~/xv6-riscv-fall19/user/_lazytests_
+
+</code></pre></div></div>
+<p>Add symbols for whatever files you want to debug.</p>
+
+<ul>
+  <li>gdb shortcuts,</li>
+</ul>
+
+<div class="language-plaintext highlighter-rouge"><div class="highlight"><pre class="highlight"><code>b *filename:line_number* (but bp in file at file number)
+
+c -&gt; continue
+
+n -&gt; step over (next line)
+
+s -&gt; step into
+</code></pre></div></div>
+
+<ul>
+  <li>Do <em>make qemu</em> for building without debugging. Do <em>make qemu-gdb</em> to be able to attach bp &amp; debug.</li>
+</ul>]]></content><author><name></name></author><summary type="html"><![CDATA[cd /opt/riscv/bin, after cd’ing run ./riscv64-unknown-linux-gnu-gdb ~/xv6-riscv-fall19/kernel/kernel.]]></summary></entry><entry><title type="html">Thread Questions from https://www.ops-class.org/asst/1/</title><link href="http://localhost:4000/2019/08/18/OS161Asst1Questions.html" rel="alternate" type="text/html" title="Thread Questions from https://www.ops-class.org/asst/1/" /><published>2019-08-18T00:00:00+05:30</published><updated>2019-08-18T00:00:00+05:30</updated><id>http://localhost:4000/2019/08/18/OS161Asst1Questions</id><content type="html" xml:base="http://localhost:4000/2019/08/18/OS161Asst1Questions.html"><![CDATA[<ol>
+  <li>What happens to a thread when it calls thread_exit? What about when it sleeps?</li>
+</ol>
+
+<p>On thread_exit, thread structures are cleaned up and thread switches to ZOMBIE state.</p>
+
+<ol>
+  <li>What function or functions handle(s) a context switch?</li>
+</ol>
+
+<p>thread_switch.</p>
+
+<ol>
+  <li>What does it mean for a thread to be in each of the possible thread states?</li>
+</ol>
+
+<p>S_RUN = Running</p>
+
+<p>S_READY = Ready to Run</p>
+
+<p>S_SLEEP = Sleeping</p>
+
+<p>S_ZOMBIE = exited but not yet deleted.</p>]]></content><author><name></name></author><summary type="html"><![CDATA[What happens to a thread when it calls thread_exit? What about when it sleeps?]]></summary></entry><entry><title type="html">Quick shortcuts for OS161 (for my own reference)</title><link href="http://localhost:4000/2019/08/18/OS161Shortcuts.html" rel="alternate" type="text/html" title="Quick shortcuts for OS161 (for my own reference)" /><published>2019-08-18T00:00:00+05:30</published><updated>2019-08-18T00:00:00+05:30</updated><id>http://localhost:4000/2019/08/18/OS161Shortcuts</id><content type="html" xml:base="http://localhost:4000/2019/08/18/OS161Shortcuts.html"><![CDATA[<ol>
+  <li>Run ctags on the source folder, makes it easier to navigate through code.
+    <div class="language-plaintext highlighter-rouge"><div class="highlight"><pre class="highlight"><code>cd os161\
+ctags -R
+</code></pre></div>    </div>
+  </li>
+  <li>
+    <p>tmux shortcuts,</p>
+
+    <p>a. All commands are triggered by prefix key - <code class="language-plaintext highlighter-rouge">Ctrl+B</code>, press <code class="language-plaintext highlighter-rouge">Ctrl</code> and <code class="language-plaintext highlighter-rouge">b</code> together.</p>
+
+    <p>b. To split the pane, in left and right <code class="language-plaintext highlighter-rouge">Ctrl + B</code> then <code class="language-plaintext highlighter-rouge">Shift + %</code>.</p>
+
+    <p>c. To split the pane, in top and bottom <code class="language-plaintext highlighter-rouge">Ctrl + B</code> then <code class="language-plaintext highlighter-rouge">Shift + "</code>.</p>
+
+    <p>d. To Exit from the current pane, type <code class="language-plaintext highlighter-rouge">exit</code> or hit <code class="language-plaintext highlighter-rouge">Ctrl + D</code>.</p>
+
+    <p>e. To navigate, Press <code class="language-plaintext highlighter-rouge">Ctrl + B</code>, then use arrow keys to navigate.</p>
+  </li>
+  <li>
+    <p>Vim and ctags shortcuts,</p>
+
+    <p>a. <code class="language-plaintext highlighter-rouge">Ctrl + ]</code> to go to definition.</p>
+
+    <p>b. <code class="language-plaintext highlighter-rouge">Ctrl + T</code> to jump back from definition.</p>
+
+    <p>c. <code class="language-plaintext highlighter-rouge">Ctrl + W, Ctrl + ]</code> open definition in a horizontal split.</p>
+
+    <p>d.Add these lines in vimrc
+ map &lt;C-&gt; :tab split<CR>:exec("tag ".expand("<cword>"))<CR>
+ map &lt;A-]&gt; :vsp <CR>:exec("tag ".expand("<cword>"))<CR></CR></cword></CR></CR></cword></CR></p>
+
+    <p>Ctrl+\ - Open the definition in a new tab
+ Alt+] - Open the definition in a vertical split</p>
+  </li>
+  <li>
+    <p>Debugging OS-161 kernel,</p>
+
+    <p>a. Run <code class="language-plaintext highlighter-rouge">sys161 -w kernel</code> in a new window.</p>
+
+    <p>b. Run <code class="language-plaintext highlighter-rouge">os161-gdb kernel</code> in another window. In this window, run <code class="language-plaintext highlighter-rouge">target remote unix:.sockets/gdb</code>.</p>
+  </li>
+</ol>]]></content><author><name></name></author><summary type="html"><![CDATA[Run ctags on the source folder, makes it easier to navigate through code. cd os161\ ctags -R]]></summary></entry><entry><title type="html">Towers of Hanoi with a small modification.</title><link href="http://localhost:4000/2019/01/06/ModifiedTowersOfHanoi.html" rel="alternate" type="text/html" title="Towers of Hanoi with a small modification." /><published>2019-01-06T00:00:00+05:30</published><updated>2019-01-06T00:00:00+05:30</updated><id>http://localhost:4000/2019/01/06/ModifiedTowersOfHanoi</id><content type="html" xml:base="http://localhost:4000/2019/01/06/ModifiedTowersOfHanoi.html"><![CDATA[<p>This problem is taken from Jeff Erickson’s Algorithms ‘textbook’, link <a href="http://jeffe.cs.illinois.edu/teaching/algorithms">here</a>.
+This is Problem 3 from the first chapter which is on Recursion. This has been shortened considerably.</p>
+
+<p>You’re given three needles/pegs lettered A,B &amp; C from left to right. You have \(n\) disks
+placed on peg A and you’re goal is to move all \(n\) disks from A to C with the
+following restrictions</p>
+
+<ol>
+  <li>You can only move disks one at a time onto peg B or from/to Peg A and C.</li>
+  <li>It is forbidden to place a larger disk onto a smaller one.</li>
+  <li>You can move any number of disks from peg B to any other peg.</li>
+</ol>
+
+<p>The problem is to describe the algorithm and the number of steps it takes i.e. the Running time.</p>
+
+<p>I was assisted by this figure below -</p>
+
+<p><img src="https://sudk1896.github.io/images/Screenshot%20from%202019-01-06%2016-12-18.png" alt="image" /></p>
+
+<p>The important clue here is that with the restriction number three, we have only one recursive
+sub-problem instead of the usual two in the classical Tower of Hanoi problem. Say that you
+begin with \(n\) disks and you have moved \(n-1\) disks to peg B i.e. the Recursion Fairy has 
+moved those \(n-1\) disks, after this you can move the \(n^{th}\) disk to peg C in one move
+and the rest of \(n-1\) disks onto peg C in one move (because of the restriction #3).</p>
+
+<p>Consequently the recursion translates to the following equation
+\(T(n) = T(n-1) + 2 \thinspace \forall \thinspace  n \geq 2 \)
+For the base case of when you have one disk, it only takes one
+move to move that one disk from any peg to any other. Solving this gives
+\(T(n) = 2n - 1 \thinspace \forall \thinspace  n \geq 1 \)</p>]]></content><author><name></name></author><summary type="html"><![CDATA[This problem is taken from Jeff Erickson’s Algorithms ‘textbook’, link here. This is Problem 3 from the first chapter which is on Recursion. This has been shortened considerably.]]></summary></entry><entry><title type="html">On rules of Commitment in Raft.</title><link href="http://localhost:4000/2018/11/10/CommitmentInRaft.html" rel="alternate" type="text/html" title="On rules of Commitment in Raft." /><published>2018-11-10T00:00:00+05:30</published><updated>2018-11-10T00:00:00+05:30</updated><id>http://localhost:4000/2018/11/10/CommitmentInRaft</id><content type="html" xml:base="http://localhost:4000/2018/11/10/CommitmentInRaft.html"><![CDATA[<p>I was reading up on Raft, an understandable consensus algorithm. The link to the paper is
+<a href="https://raft.github.io/raft.pdf">here</a>. Only continue reading if you’ve read the paper.</p>
+
+<p>Right here The paper states that</p>
+
+<p><img src="https://sudk1896.github.io/images/Screenshot%20from%202018-11-10%2013-57-44.png" alt="Page 7" />,</p>
+<div class="language-plaintext highlighter-rouge"><div class="highlight"><pre class="highlight"><code>A Log entry is committed once the leader that created the entry has 
+replicated it on a majority of the servers.
+</code></pre></div></div>
+
+<p>I misunderstood this statement to assume that whenever an entry is present on a majority of 
+the servers, it is committed. This assumption doesn’t hold.</p>
+
+<p>On Page-8 of the raft paper and in Figure-8</p>
+
+<p><img src="https://sudk1896.github.io/images/Screenshot%20from%202018-11-10%2014-15-33.png" alt="alt text" title="here" />,</p>
+
+<p>In Figure-8.c, It is Term 4 and S1 is leader. Even though the entry at Index 2 Term 2 is present on a majority of 
+the servers, it is entirely possible that that entry can be wiped out as shown in Figure-8.d. In the next Term i.e. Term 5 (whenever new leader is elected term increases) S5 could overwrite entries at indices &gt;= 2 with its own Term 3 entry (because of AppendEntries RPC #3)</p>
+
+<div class="language-plaintext highlighter-rouge"><div class="highlight"><pre class="highlight"><code>If an existing entry conflicts with a new one(same index but different terms), 
+delete the existing entry and all that follow it.
+</code></pre></div></div>
+
+<p>In order for this to not happen, the <strong>leader in the current term</strong> should replicate an entry that it received in the 
+<strong>current term</strong> on a <strong>majority</strong> of the servers. In our case, S1 needs to replicate the entry it received in Term 4 on a majority of the servers. After doing that, if S1 crashes before committing the entries, S5 cannot be elected leader and hence won’t overwrite the entries
+with indices &gt;= 2. The RequestVote RPC would fail for S5 as RequestVoteRPC #2 would not hold, S5’s logs aren’t up-to-date
+with S1,S2,S2 (i.e. a majority) and hence S5 cannot get votes from a majority of the servers and can’t be elected as leader.</p>
+
+<p>There are two subtle learnings that I could discern -</p>
+
+<ol>
+  <li>Even if entries from older terms are present on a majority of the servers, that is no guarantee of commitment.</li>
+  <li>In order for an entry to be committed, an entry must be stored on a majority of the servers and the leader that commits it must have replicated an entry from its own current term to a majority of the servers.</li>
+</ol>]]></content><author><name></name></author><summary type="html"><![CDATA[I was reading up on Raft, an understandable consensus algorithm. The link to the paper is here. Only continue reading if you’ve read the paper.]]></summary></entry><entry><title type="html">Elvis has entered the building.</title><link href="http://localhost:4000/2016/12/22/Init.html" rel="alternate" type="text/html" title="Elvis has entered the building." /><published>2016-12-22T00:00:00+05:30</published><updated>2016-12-22T00:00:00+05:30</updated><id>http://localhost:4000/2016/12/22/Init</id><content type="html" xml:base="http://localhost:4000/2016/12/22/Init.html"><![CDATA[<p>Hello, there. Its 3:21 A.M right now, I’ve been at this blogging thing for about 3 hours now.
+Truth be told, it was a bit painful setting up my own blog using GitHub Pages. I am keeping my
+fingers crossed that this blogging thing better become more regular. I have made myself this promise
+several times before and intend to keep it this time, seeing as how it cost me 3 hours.</p>
+
+<p>To tell the reader (If there are any, comment below if you do exist!!), I have been doing a few things lately.
+I studied quite a bit of Math and got my basics cemented. I studied <a href="https://ocw.mit.edu/courses/mathematics/18-06-linear-algebra-spring-2010/">Linear Algebra from here</a> and also studied <a href="http://projects.iq.harvard.edu/stat110/">Statistics 110 from here</a>.
+I did this with the express intention of strengthening my Math background for studying Machine Learning/Artificial Intelligence and the
+like. Suffice to say, it helped tremendously. And I would gladly suggest this to anyone planning such an endeavour. I still have
+a few things left to study in Statistics though, Beta,Gamma distributions, Markov Chains and Law of Large Numbers. Which Reminds me that I need
+to finish them pretty soon. I am also studying <a href="http://www.amazon.in/Linear-Algebra-Done-Right-Axler/dp/8184895321/">Sheldon Axler</a>
+to get a better grip over abstract linear algebra, I bought the hardcover from Amazon and intend to read it cover-to-cover, but alas the progress has been a bit slow on that front.</p>
+
+<p>Lastly, I am also into <a href="https://www.youtube.com/watch?v=nLKOQfKLUks&amp;t=49s">Lecture 4</a> of <a href="http://cs229.stanford.edu/info.html">CS 229</a>.
+But I think the progress there will slow down a bit, courtesy of the upcoming placement session from Jan 2017. I will keep updating my plans
+here. See you soon.</p>]]></content><author><name></name></author><summary type="html"><![CDATA[Hello, there. Its 3:21 A.M right now, I’ve been at this blogging thing for about 3 hours now. Truth be told, it was a bit painful setting up my own blog using GitHub Pages. I am keeping my fingers crossed that this blogging thing better become more regular. I have made myself this promise several times before and intend to keep it this time, seeing as how it cost me 3 hours.]]></summary></entry></feed>

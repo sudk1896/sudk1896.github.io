@@ -1,8 +1,10 @@
+title: "A blog on Computer Systems & Algorithms"
 name: "A blog on Computer Systems & Algorithms"
 description: "Lightweight theme"
 
 url: '' 
 baseurl: ''
+theme: minima
 
 markdown: kramdown
 markdown_ext: "markdown,mkdown,mkdn,mkd,md"
@@ -12,15 +14,9 @@ kramdown:
   input: GFM
   syntax_highlighter: rouge
 
-plugins:
-  - jekyll-paginate
-paginate: 10
-paginate_path: /page-:num
-
 source: .
 destination: ./_site
 
 sass:
     style: :compressed
     sass_dir: assets/css/
-

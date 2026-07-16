@@ -1,0 +1,312 @@
+<!DOCTYPE html>
+<html lang="en"><head>
+  <meta charset="utf-8">
+  <meta http-equiv="X-UA-Compatible" content="IE=edge">
+  <meta name="viewport" content="width=device-width, initial-scale=1"><!-- Begin Jekyll SEO tag v2.8.0 -->
+<title>Leader election and Log replication in Raft | A blog on Computer Systems &amp; Algorithms</title>
+<meta name="generator" content="Jekyll v3.10.0" />
+<meta property="og:title" content="Leader election and Log replication in Raft" />
+<meta property="og:locale" content="en_US" />
+<meta name="description" content="Raft is a consensus algorithm for managing a replicated log. This write-up will go over Leader election and Log Replication. The insights are from finishing assignments 3A, 3B, 3C from the MIT 6.824 Distributed Systems course. This post assumes that you have read the Raft paper, ideally multiple times." />
+<meta property="og:description" content="Raft is a consensus algorithm for managing a replicated log. This write-up will go over Leader election and Log Replication. The insights are from finishing assignments 3A, 3B, 3C from the MIT 6.824 Distributed Systems course. This post assumes that you have read the Raft paper, ideally multiple times." />
+<link rel="canonical" href="http://localhost:4000/2026/07/03/Raft.html" />
+<meta property="og:url" content="http://localhost:4000/2026/07/03/Raft.html" />
+<meta property="og:site_name" content="A blog on Computer Systems &amp; Algorithms" />
+<meta property="og:type" content="article" />
+<meta property="article:published_time" content="2026-07-03T00:00:00+05:30" />
+<meta name="twitter:card" content="summary" />
+<meta property="twitter:title" content="Leader election and Log replication in Raft" />
+<script type="application/ld+json">
+{"@context":"https://schema.org","@type":"BlogPosting","dateModified":"2026-07-03T00:00:00+05:30","datePublished":"2026-07-03T00:00:00+05:30","description":"Raft is a consensus algorithm for managing a replicated log. This write-up will go over Leader election and Log Replication. The insights are from finishing assignments 3A, 3B, 3C from the MIT 6.824 Distributed Systems course. This post assumes that you have read the Raft paper, ideally multiple times.","headline":"Leader election and Log replication in Raft","mainEntityOfPage":{"@type":"WebPage","@id":"http://localhost:4000/2026/07/03/Raft.html"},"url":"http://localhost:4000/2026/07/03/Raft.html"}</script>
+<!-- End Jekyll SEO tag -->
+<link rel="stylesheet" href="/assets/main.css"><link type="application/atom+xml" rel="alternate" href="http://localhost:4000/feed.xml" title="A blog on Computer Systems &amp; Algorithms" /></head>
+<body><header class="site-header" role="banner">
+
+  <div class="wrapper"><a class="site-title" rel="author" href="/">A blog on Computer Systems &amp; Algorithms</a><nav class="site-nav">
+        <input type="checkbox" id="nav-trigger" class="nav-trigger" />
+        <label for="nav-trigger">
+          <span class="menu-icon">
+            <svg viewBox="0 0 18 15" width="18px" height="15px">
+              <path d="M18,1.484c0,0.82-0.665,1.484-1.484,1.484H1.484C0.665,2.969,0,2.304,0,1.484l0,0C0,0.665,0.665,0,1.484,0 h15.032C17.335,0,18,0.665,18,1.484L18,1.484z M18,7.516C18,8.335,17.335,9,16.516,9H1.484C0.665,9,0,8.335,0,7.516l0,0 c0-0.82,0.665-1.484,1.484-1.484h15.032C17.335,6.031,18,6.696,18,7.516L18,7.516z M18,13.516C18,14.335,17.335,15,16.516,15H1.484 C0.665,15,0,14.335,0,13.516l0,0c0-0.82,0.665-1.483,1.484-1.483h15.032C17.335,12.031,18,12.695,18,13.516L18,13.516z"/>
+            </svg>
+          </span>
+        </label>
+
+        <div class="trigger"><a class="page-link" href="/about/">About</a><a class="page-link" href="/contact/">Contact</a><a class="page-link" href="/archive/"></a></div>
+      </nav></div>
+</header>
+<main class="page-content" aria-label="Content">
+      <div class="wrapper">
+        <article class="post h-entry" itemscope itemtype="http://schema.org/BlogPosting">
+
+  <header class="post-header">
+    <h1 class="post-title p-name" itemprop="name headline">Leader election and Log replication in Raft</h1>
+    <p class="post-meta">
+      <time class="dt-published" datetime="2026-07-03T00:00:00+05:30" itemprop="datePublished">Jul 3, 2026
+      </time></p>
+  </header>
+
+  <div class="post-content e-content" itemprop="articleBody">
+    <p>Raft is a consensus algorithm for managing a replicated log. This write-up will go over Leader election and Log Replication. The insights are from finishing assignments <a href="https://pdos.csail.mit.edu/6.824/labs/lab-raft1.html">3A, 3B, 3C</a> from the MIT 6.824 Distributed Systems course. This post
+assumes that you have read the <a href="https://raft.github.io/raft.pdf">Raft paper</a>, ideally multiple times.</p>
+
+<h1 id="leader-election">Leader election</h1>
+
+<p>Raft enforces strong leadership. It elects one leader which is responsible for sending log entries to all other servers (peers). Log entries always flow from leader to followers.</p>
+
+<p>Every raft server has an <code class="language-plaintext highlighter-rouge">electionTimeout</code> (stored persistently on disk) that is randomly set from within a range for e.g., between 150-300ms. Elections are managed using <code class="language-plaintext highlighter-rouge">RequestVote</code> RPCs. Below is the pseudo-code for how elections occur and how a leader is elected.</p>
+
+<p>Every peer has a long running task (conceptually a cron job)</p>
+<div class="language-plaintext highlighter-rouge"><div class="highlight"><pre class="highlight"><code>// The candidate sends a RequestVote RPC to the peer
+// this method runs on the peer
+// The result of the execution (whether vote was granted etc)
+// is sent back via the reply
+func RequestVoteRpc(args RequestVoteArgs, reply RequestVoteReply){
+   if args.Term &lt; currentTerm {
+    reply.Success = false
+    return
+   }
+
+   reply.Success = false
+   if votedFor == null or votedFor == args.CandidateId &amp;&amp; IsCandidateLogUpToDate(lastLogIdx, lastLogTerm int) {
+    reply.Success = true
+   }
+}
+
+
+func startElection(){
+    if (time elapsed since receiving AppendEntries RPC or since voting for a candidate &gt; electionTimeout){
+        currentState := Candidate
+        currentTerm += 1
+        voteFor := myself
+        votes := 1
+        electionTimeout := 150 + (randInit()%150) // reset election timer
+        // the RequestVote RPCs are sent in parallel to all peers by the candidate
+        for p := peers {
+            if p != myself {
+                requestVoteReply := go RequestVoteRpc()
+                if (requestVoteReply != successful) {
+                    sleep(smallDuration)
+                    continue // retry the rpc
+                } else {
+                    votes += 1
+                }
+            }
+        }
+
+        if votes &gt; majority of peers {
+            currentState := Leader
+            for p := peers {
+                if p != myself {
+                    go SendAppendEntriesHeartbeat(p)
+                }
+            }
+        }
+    }
+}
+
+func electionTicker(){
+    for {
+        sleepDuration := 150 + (randInt()%150)
+        Sleep(sleepDuration)
+        startElection()
+    }
+}
+</code></pre></div></div>
+
+<p>At its core for a peer to be elected as a leader, first a peer transitions to candidate, then it sends <code class="language-plaintext highlighter-rouge">RequestVote</code> RPCs in parallel to all other peers. If it gets a majority of votes, it becomes a Leader. Not every candidate can become a leader, only candidates that have an up to date log can become leaders, if a candidate doesn’t have an up to date log it won’t receive a majority of votes. This restriction is implemented via the <code class="language-plaintext highlighter-rouge">IsCandidateUpToDate</code> method.</p>
+
+<p>Upon election as a leader, the leader sends an <code class="language-plaintext highlighter-rouge">AppendEntries</code> RPC to all other peers to establish
+and maintain it leadership. This is to prevent other peers from attempting to become candidates and also to transfer logs from leader to followers. We will discuss this in the Log replication section.</p>
+
+<h1 id="log-replication">Log replication</h1>
+
+<p>In Raft, all clients (that send logs) talk to the leader only. If a client connects to a non-leader its redirected to the leader. When a client sends a new log entry to be appended, the leader would add it to its own log and then the <code class="language-plaintext highlighter-rouge">AppendEntries</code> heartbeat would take care of replicating this to all the peers.</p>
+
+<p>After a leader is elected, it sends an <code class="language-plaintext highlighter-rouge">AppendEntries</code> RPC to all other peers. This has two functions, to establish and maintain leadership, for which we send the RPC at a regular cadence and second, if there are new log entries added to the leader’s log this would be replicated by the RPC as well. Although the Raft paper maintains that for an <code class="language-plaintext highlighter-rouge">AppendEntries</code> heartbeat, the log entries sent should be empty. This is an implementation detail. In our case, when we send <code class="language-plaintext highlighter-rouge">AppendEntries</code> heartbeat and in between the heartbeats if there are logs added to the leader, we would send the newly added logs in the next heartbeat.</p>
+
+<div class="language-plaintext highlighter-rouge"><div class="highlight"><pre class="highlight"><code>// this runs on the peer, args is sent by the leader and reply
+// is set by the peer for the leader to consume
+func AppendEntriesRpc(peer, appendEntriesArgs, appendEntriesReply){
+    if appendEntriesArgs.Term &lt; currentTerm {
+        // rpc sent by outdated leader
+        // decline the rpc (reply false)
+        // Leader will convert to follower on receipt of this RPC response
+    }
+
+    if appendEntriesArgs.PrevLogIdx &gt;= len(log) {
+        // Leader's log is longer than the follower
+        // Decline the RPC (reply false)
+        // Leader will update nextIdx after receipt of this rpc response
+    }
+
+    if log[appendEntriesArgs.PrevLogidx] != appendEntriesArgs.PrevLogTerm {
+        // There is a term mismatch at lastLogIdx b/w leader and follower
+        // Decline the RPC (reply false)
+        // Leader will update nextIdx after receipt of this rpc response.
+    }
+
+    // Terms match at lastLogIdx for leader and peer.
+    i := appendEntriesArgs.PrevLogIdx + 1
+    j := 0
+    for i &lt; len(log) &amp;&amp; j &lt; len(appendEntriesArgs.Entries) {
+        // find out where leader and follower log disagree (if at all)
+        // let that index be k
+        // discard follower log after that index
+    }
+
+    // Append Log sent by leader starting from index k
+    // since its not present on the follower.
+    log = append(log, appendEntriesArgs.Entries[k:])
+
+    // AppendEntriesRPC was successful
+    // After leader receives this rpc response and updates
+    // nextIdx and matchIdx for this peer, leader and follower logs match
+    appendEntriesReply.Success = true
+
+    // Update this peer's commit Index based on
+    // leader's commitIndex and this peer's updated log
+    if appendEntriesArgs.LeaderCommit &gt; commitIndex {
+        commitIndex = min(appendEntriesArgs.LeaderCommmit, len(log))
+    }
+}
+
+// The leader sends an Append Entries RPC to every peer
+// The leader runs this and handles the response from the peer
+// This doesn't handle the scenarios where RPC responses
+// might be dropped or delivered out of order
+func SendAppendEntriesRPC(peer int){
+    // After an election rf.nextIdx[peer] = len(log)
+    lastLogIdx := rf.nextIdx[peer] - 1 // we are optimistically assuming that peer has
+    // log up to lastLogIdx.
+    lastLogTerm := rf.log[lastLogIdx].Term
+    logEntries := rf.log[lastLogIdx+1:] // if peer has log up to lastLogIdx, we need to send
+    // log starting from lastLogIdx+1 to be rpelicated on the peer.
+
+    appendEntriesArgs := {
+        Term : currentTerm,
+        PrevLogIdx: lastLogIdx,
+        PrevLogTerm: lastLogTerm,
+        Entries: logEntries
+    }
+
+    appendEntriesResp := go AppendEntriesRpc(peer, appendEntriesArgs, appendEntriesReply)
+    if appendEntriesResp.Status != Failed {
+        //peer was down, resp was dropped, req timed out etc
+        retry
+    } else {
+        if appendEntriesReply.Success {
+            // log up to lastLogIdx is present on the peer and it added logEntries to its log
+            // update nextIndex and matchIndex
+            nextIdx[peer] = lastLogIdx + len(logEntries)
+            matchIdx[peer] = lastLogIdx + len(logEntries) - 1
+        } else {
+            nextIdx[peer] = nextIdx[peer] - 1 // we know that log doesn't match at lastLogIdx
+            // so decrement it by 1 and retry
+            retry
+        }
+    }
+}
+
+func SendAppendEntriesPeriodically(peer int){
+    for {
+        // Send Append Entries RPC every 10ms to maintain leadership
+        // and replicate logs
+        go SendAppendEntriesRPC(peer)
+        time.Sleep(10ms)
+    }
+}
+
+func SendAppendEntriesHeartbeat(){
+    for p := range peers {
+        if p != leader {
+            go SendAppendEntriesPeriodically(p)
+        }
+    }
+}
+</code></pre></div></div>
+
+<p>The Raft protocol leaves a lot of room for interpretation from the sender’s side.
+The protocol doesn’t specify how to handle out of order RPC replies. Here is one bug
+that stumped me. In Figure 2 of the paper, its mentioned that <em>matchIndex[] increases monotonically</em>. This means that whenever we update <em>matchIndex</em> for a peer on a successful AppendEntries RPC response, we should ensure <em>matchIndex</em> can only increase.</p>
+
+<p>We use <em>matchIndex</em> to update the <em>commitIndex</em> on the leader, which in the end decides whether log entries up to a certain index are committed and eventually applied to the state machine. When an operation is applied to the state machine, we return a successful response
+to the client and that means that the log entries up to an index submitted by the client are durable and won’t be overwritten in the future.</p>
+
+<div class="language-plaintext highlighter-rouge"><div class="highlight"><pre class="highlight"><code>If there exists an N such that N &gt; commitIndex, a majority
+of matchIndex[i] ≥ N, and log[N].term == currentTerm:
+set commitIndex = N
+</code></pre></div></div>
+
+<p>If we were to decrement <em>matchIndex</em>, we would potentially be decrementing <em>commitIndex</em>
+and <em>uncommitting</em> log entries which were already committed thereby violating Leader completeness and State machine safety properties. When we set <em>commitIndex</em>, it will eventually be used to apply the operation to the state machine via</p>
+
+<div class="language-plaintext highlighter-rouge"><div class="highlight"><pre class="highlight"><code>If commitIndex &gt; lastApplied: increment lastApplied, apply
+log[lastApplied] to state machine (§5.3)
+</code></pre></div></div>
+
+<p>As to how the bug can manifest, assume leader sends an Append Entries RPC A
+and RPC B, both were successful. RPC-A was sent before RPC-B but the leader received them out of order i.e., it processed B before A.</p>
+
+<div class="language-plaintext highlighter-rouge"><div class="highlight"><pre class="highlight"><code>AppendEntries RPC-B
+PrevLogIdx: 10
+PrevLogTerm: 8
+Entries: [11, 12, 13] // indices of the entries
+
+AppendEntriesReply
+Success = true
+nextIndex[peer] = 13
+matchIndex[peer] = 12
+</code></pre></div></div>
+
+<p>When we process an older Append Entries response, we must ensure
+that it doesn’t decrement <em>matchIndex</em> from a newer
+Append Entries RPC response. If we process RPC-A’s response in this instance,
+we would be decrementing <em>nextIndex</em> and <em>matchIndex</em>.</p>
+
+<div class="language-plaintext highlighter-rouge"><div class="highlight"><pre class="highlight"><code>AppendEntries RPC-A
+PrevLogIdx: 5
+PrevLogTerm: 8
+Entries: [6, 7] // indices of the entries
+
+AppendEntriesReply // received after B
+Success = true
+
+nextIndex[peer] = 8 // WRONG!
+matchIndex[peer] = 7 // WRONG!
+// Leader and peer already agree till index 12 (matchIndex[peer] = 12 from RPC-B)
+// we are removing entries from the peer which were successfully replicated
+// and possibly committed and applied to the state machine.
+</code></pre></div></div>
+
+  </div><a class="u-url" href="/2026/07/03/Raft.html" hidden></a>
+</article>
+
+      </div>
+    </main><footer class="site-footer h-card">
+  <data class="u-url" href="/"></data>
+
+  <div class="wrapper">
+
+    <h2 class="footer-heading">A blog on Computer Systems &amp; Algorithms</h2>
+
+    <div class="footer-col-wrapper">
+      <div class="footer-col footer-col-1">
+        <ul class="contact-list">
+          <li class="p-name">A blog on Computer Systems &amp; Algorithms</li></ul>
+      </div>
+
+      <div class="footer-col footer-col-2"><ul class="social-media-list"></ul>
+</div>
+
+      <div class="footer-col footer-col-3">
+        <p>Lightweight theme</p>
+      </div>
+    </div>
+
+  </div>
+
+</footer>
+</body>
+
+</html>
