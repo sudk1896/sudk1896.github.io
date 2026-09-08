@@ -286,8 +286,7 @@ they are applied in order. Therefore, after we've applied the write at 70, some
 new Paxos write at timestamp 60 cannot suddenly appear later.
 
 But this is not enough. There could be a txn that is _PREPARED_ but not
-_COMMITTED_. This is the handled by t<sub>safe</sub> <sup>TM</sup>
-handles.
+_COMMITTED_. This is the handled by t<sub>safe</sub> <sup>TM</sup>.
 
 Now suppose that t<sub>safe</sub> <sup>TM</sup> = 100. We might assume we can
 serve reads _@90_. But we have a _PREPARED_ txn T2 which has its prepare
