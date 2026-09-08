@@ -4,5 +4,4 @@ title: About
 permalink: /about/
 ---
 
-I'm a software engineer primarily interested in computer systems and
-algorithms. This blog catalogues things I learn, build, and find interesting.
+I'm a software engineer interested in Systems, primarily Distributed systems, Databases and Operating systems. This blog catalogues things I learn, build, and find interesting.
